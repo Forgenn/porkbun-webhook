@@ -1,0 +1,16 @@
+services:
+  porkbun-webhook:
+    build: .
+    ports:
+      - "8080:8080"
+    restart: no
+
+    environment:
+      - GROUP_NAME=porkbun-webhook
+      - KUBERNETES_SERVICE_HOST=host.docker.internal # resolves to host IP
+      - KUBERNETES_SERVICE_PORT=8001 # default Kubernetes API port
+      - KUBECONFIG=/root/.kube/config
+    volumes:
+      - ~/.kube/config:/root/.kube/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # ensures host resolution works
