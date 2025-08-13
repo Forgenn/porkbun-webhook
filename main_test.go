@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	acmetest "github.com/cert-manager/cert-manager/test/acme"
-
-	"github.com/cert-manager/webhook-example/example"
+	zap "go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 )
 
 var (
@@ -18,20 +18,24 @@ func TestRunsSuite(t *testing.T) {
 	// snippet of valid configuration that should be included on the
 	// ChallengeRequest passed as part of the test cases.
 	//
+	zap.ReplaceGlobals(zaptest.NewLogger(t))
 
 	// Uncomment the below fixture when implementing your custom DNS provider
-	//fixture := acmetest.NewFixture(&customDNSProviderSolver{},
+	solver := New()
+
+	//fixture := acmetest.NewFixture(solver,
 	//	acmetest.SetResolvedZone(zone),
 	//	acmetest.SetAllowAmbientCredentials(false),
 	//	acmetest.SetManifestPath("testdata/my-custom-solver"),
-	//	acmetest.SetBinariesPath("_test/kubebuilder/bin"),
+	//	acmetest.SetStrict(true),
 	//)
-	solver := example.New("59351")
+
 	fixture := acmetest.NewFixture(solver,
 		acmetest.SetResolvedZone("example.com."),
 		acmetest.SetManifestPath("testdata/my-custom-solver"),
-		acmetest.SetDNSServer("127.0.0.1:59351"),
+		acmetest.SetDNSServer("127.0.0.1:59352"),
 		acmetest.SetUseAuthoritative(false),
+		acmetest.SetStrict(true),
 	)
 	//need to uncomment and  RunConformance delete runBasic and runExtended once https://github.com/cert-manager/cert-manager/pull/4835 is merged
 	//fixture.RunConformance(t)
