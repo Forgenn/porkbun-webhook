@@ -123,6 +123,7 @@ func (c *porkbunDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error 
 		zap.S().Infof("Succesfully created record %s.%s", subdomain, domain)
 	}
 
+	// Doesnt seem to work, but shouldn't be necessary as we cleanup right after
 	if value != "" && ID != "" {
 		RecordId, err := strconv.Atoi(ID)
 		if err != nil {
