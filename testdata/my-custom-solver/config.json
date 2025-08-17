@@ -5,6 +5,6 @@
   },
   "secretKeySecretRef": {
     "name": "porkbun-secret",
-    "key": "secret-key"
+    "key": "secret-api-key"
   }
 }

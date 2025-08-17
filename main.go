@@ -1,16 +1,23 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+
+	"github.com/pkg/errors"
 
 	"github.com/cert-manager/cert-manager/pkg/acme/webhook"
 	"github.com/cert-manager/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	"github.com/cert-manager/cert-manager/pkg/acme/webhook/cmd"
+	"github.com/nrdcg/porkbun"
 	zap "go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -61,10 +68,9 @@ type porkbunDNSProviderSolver struct {
 // be used by your provider here, you should reference a Kubernetes Secret
 // resource and fetch these credentials using a Kubernetes clientset.
 type customDNSProviderConfig struct {
-
-	//Email           string `json:"email"`
+	// Important, these JSON tag names must match the ones in testdata to be correctly parsed!
 	APIKeySecretRef       v1.SecretKeySelector `json:"apiKeySecretRef"`
-	SecretAPIKeySecretRef v1.SecretKeySelector `json:"apiKeySecretRef"`
+	SecretAPIKeySecretRef v1.SecretKeySelector `json:"secretKeySecretRef"`
 }
 
 // Name is used as the name for this DNS solver when referencing it on the ACME
@@ -83,15 +89,64 @@ func (c *porkbunDNSProviderSolver) Name() string {
 // cert-manager itself will later perform a self check to ensure that the
 // solver has correctly configured the DNS provider.
 func (c *porkbunDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
-	cfg, err := loadConfig(ch.Config)
+	zap.S().Infof("Running Challenge request with FQDN %s and ResolvedZone %s", ch.ResolvedFQDN, ch.ResolvedZone)
+
+	porkbunClient, err := c.loadConfig(ch.Config, ch.ResourceNamespace)
 	if err != nil {
 		return err
 	}
 
-	// TODO: do something more useful with the decoded configuration
-	zap.S().Info("Decoded configuration %v", cfg)
+	ctx := context.Background()
 
-	// TODO: add code that sets a record in the DNS provider's console
+	domain := strings.TrimSuffix(ch.ResolvedZone, ".")
+	subdomain := strings.TrimSuffix(ch.ResolvedFQDN, "."+domain+".")
+	fdqn := strings.TrimSuffix(ch.ResolvedFQDN, ".")
+
+	value, ID, err := c.checkRecordExistance(ctx, *porkbunClient, domain, fdqn, "TXT")
+
+	if err != nil {
+		return err
+	}
+
+	if value == "" && ID == "" {
+		_, err := porkbunClient.CreateRecord(ctx, domain, porkbun.Record{
+			Name:    subdomain,
+			Type:    "TXT",
+			Content: ch.Key,
+			TTL:     "60",
+		})
+
+		if err != nil {
+			return errors.Wrap(err, "Error creating the record")
+		}
+
+		zap.S().Infof("Succesfully created record %s.%s", subdomain, domain)
+	}
+
+	if value != "" && ID != "" {
+		RecordId, err := strconv.Atoi(ID)
+		if err != nil {
+			return errors.Wrap(err, "couldn't cast record it to int")
+		}
+
+		err = porkbunClient.EditRecord(ctx, domain, RecordId, porkbun.Record{
+			Name:    subdomain,
+			Type:    "TXT",
+			Content: ch.Key,
+			TTL:     "60",
+		})
+
+		if err != nil {
+			return errors.Wrap(err, "Error editing record")
+		}
+
+	}
+
+	if err != nil {
+		zap.S().Info("error pinging", err)
+		panic(err)
+	}
+
 	return nil
 }
 
@@ -102,7 +157,30 @@ func (c *porkbunDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error 
 // This is in order to facilitate multiple DNS validations for the same domain
 // concurrently.
 func (c *porkbunDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
-	// TODO: add code that deletes a record from the DNS provider's console
+	zap.S().Infof("Running Challenge CleanUp request with FQDN %s and ResolvedZone %s", ch.ResolvedFQDN, ch.ResolvedZone)
+
+	porkbunClient, err := c.loadConfig(ch.Config, ch.ResourceNamespace)
+
+	ctx := context.Background()
+
+	domain := strings.TrimSuffix(ch.ResolvedZone, ".")
+	fdqn := strings.TrimSuffix(ch.ResolvedFQDN, ".")
+
+	_, ID, err := c.checkRecordExistance(ctx, *porkbunClient, domain, fdqn, "TXT")
+
+	recordId, err := strconv.Atoi(ID)
+	if err != nil {
+		return errors.Wrap(err, "couldn't cast record it to int")
+	}
+
+	err = porkbunClient.DeleteRecord(ctx, domain, recordId)
+
+	if err != nil {
+		return err
+	}
+
+	zap.S().Infof("Succesfully deleted record %s", fdqn)
+
 	return nil
 }
 
@@ -130,19 +208,68 @@ func (c *porkbunDNSProviderSolver) Initialize(kubeClientConfig *rest.Config, sto
 	return nil
 }
 
+func (c *porkbunDNSProviderSolver) getSecretValueFromRef(secretRef v1.SecretKeySelector, namespace string) (string, error) {
+	secret, err := c.client.CoreV1().Secrets(namespace).Get(context.Background(), secretRef.Name, metav1.GetOptions{})
+
+	if err != nil {
+		return "", errors.Wrapf(err, "error retrieving secret %s from namespace %s", secretRef.Name, namespace)
+	}
+
+	var secretValue []byte
+	var ok bool
+
+	if secretValue, ok = secret.Data[secretRef.Key]; !ok {
+		return "", errors.Wrapf(err, "error retrieving key %s from secret %s from namespace %s", secretRef.Key, secretRef.Name, namespace)
+	}
+
+	return string(secretValue), nil
+}
+
+// Check if a record of a certain type exists
+// Return the value of the record, empty if error or if record not found, and the ID of the record.
+func (c *porkbunDNSProviderSolver) checkRecordExistance(ctx context.Context, porkbunClient porkbun.Client, domain string, name string, recordType string) (string, string, error) {
+	records, err := porkbunClient.RetrieveRecords(ctx, domain)
+
+	if err != nil {
+		return "", "", err
+	}
+
+	for _, record := range records {
+		if record.Name == name && record.Type == recordType {
+			return record.Content, record.ID, nil
+		}
+	}
+
+	return "", "", nil
+}
+
 // loadConfig is a small helper function that decodes JSON configuration into
 // the typed config struct.
-func loadConfig(cfgJSON *extapi.JSON) (customDNSProviderConfig, error) {
+func (c *porkbunDNSProviderSolver) loadConfig(cfgJSON *extapi.JSON, namespace string) (*porkbun.Client, error) {
 	cfg := customDNSProviderConfig{}
 	// handle the 'base case' where no configuration has been provided
 	if cfgJSON == nil {
-		return cfg, nil
+		return nil, fmt.Errorf("no configuration provided")
 	}
 	if err := json.Unmarshal(cfgJSON.Raw, &cfg); err != nil {
-		return cfg, fmt.Errorf("error decoding solver config: %v", err)
+		return nil, fmt.Errorf("error decoding solver config: %v", err)
 	}
 
-	return cfg, nil
+	secretAPIKey, err := c.getSecretValueFromRef(cfg.SecretAPIKeySecretRef, namespace)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "error loading config")
+	}
+
+	apiKey, err := c.getSecretValueFromRef(cfg.APIKeySecretRef, namespace)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "error loading config")
+	}
+
+	client := porkbun.New(secretAPIKey, apiKey)
+
+	return client, nil
 }
 
 func New() webhook.Solver {
