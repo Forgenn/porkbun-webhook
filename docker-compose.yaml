@@ -1,6 +1,9 @@
 services:
   porkbun-webhook:
-    build: .
+    build:
+      context: .
+      target: build
+    image: 4ntb/porkbun-webhook:v1.0
     ports:
       - "8080:8080"
     restart: no

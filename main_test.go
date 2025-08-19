@@ -32,7 +32,7 @@ func TestRunsSuite(t *testing.T) {
 
 	fixture := acmetest.NewFixture(solver,
 		acmetest.SetResolvedZone(zone),
-		acmetest.SetManifestPath("testdata/my-custom-solver"),
+		acmetest.SetManifestPath("testdata/porkbun-solver"),
 		acmetest.SetDNSServer("curitiba.ns.porkbun.com:53"),
 		acmetest.SetUseAuthoritative(true),
 		acmetest.SetStrict(true),
@@ -40,6 +40,6 @@ func TestRunsSuite(t *testing.T) {
 	//need to uncomment and  RunConformance delete runBasic and runExtended once https://github.com/cert-manager/cert-manager/pull/4835 is merged
 	//fixture.RunConformance(t)
 	fixture.RunBasic(t)
-	//fixture.RunExtended(t)
+	fixture.RunExtended(t)
 
 }
