@@ -17,14 +17,13 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-      - name: Override git origin remote
+      - name: Configure Git Authentication
         run: |
-          echo "Current remote 'origin':"
-          git remote -v
-          echo "Changing 'origin' to point to the helm repo..."
-          git remote set-url origin https://x-access-token:${{ secrets.HELM_REPO_PAT }}@github.com/Forgenn/porkbun-webhook-helm-repo.git
-          echo "New remote 'origin':"
-          git remote -v
+          git config --global http.https://github.com/.extraheader "Authorization: Bearer ${{ secrets.HELM_REPO_PAT }}"
+
+      - name: Set Git Remote
+        run: |
+          git remote set-url origin https://github.com/Forgenn/porkbun-webhook-helm-repo.git
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
