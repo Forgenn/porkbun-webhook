@@ -17,9 +17,14 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-      - name: Add Helm repository as git remote
+      - name: Override git origin remote
         run: |
-          git remote add helm-repo https://x-access-token:${{ secrets.HELM_REPO_PAT }}@github.com/Forgenn/porkbun-webhook-helm-repo.git
+          echo "Current remote 'origin':"
+          git remote -v
+          echo "Changing 'origin' to point to the helm repo..."
+          git remote set-url origin https://x-access-token:${{ secrets.HELM_REPO_PAT }}@github.com/Forgenn/porkbun-webhook-helm-repo.git
+          echo "New remote 'origin':"
+          git remote -v
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
