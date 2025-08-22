@@ -27,6 +27,6 @@ jobs:
         env:
           # Configuration for pushing to the external repository now goes here,
           # using the environment variables expected by the 'cr' tool.
-          CR_OWNER: cfv
+          CR_OWNER: Forgenn
           CR_GIT_REPO: porkbun-webhook-helm-repo
           CR_TOKEN: ${{ secrets.HELM_REPO_PAT }}
