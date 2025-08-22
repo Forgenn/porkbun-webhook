@@ -17,10 +17,9 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-      - name: Test Git Connection to Helm Repo
+      - name: Add Helm repository as git remote
         run: |
-          echo "Attempting to list remote branches on the helm repo..."
-          git ls-remote https://x-access-token:${{ secrets.HELM_REPO_PAT }}@github.com/Forgenn/porkbun-webhook-helm-repo.git
+          git remote add helm-repo https://x-access-token:${{ secrets.HELM_REPO_PAT }}@github.com/Forgenn/porkbun-webhook-helm-repo.git
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
