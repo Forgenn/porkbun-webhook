@@ -1,3 +1,4 @@
+# .github/workflows/release-chart.yaml
 name: Release Helm Chart
 
 on:
@@ -8,8 +9,6 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,6 +23,7 @@ jobs:
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
         with:
+          owner: cfv
+          git_repo: porkbun-webhook-helm-repo
           charts_dir: deploy
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          token: ${{ secrets.HELM_REPO_PAT }}
