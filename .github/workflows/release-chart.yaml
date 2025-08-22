@@ -24,7 +24,6 @@ jobs:
         uses: helm/chart-releaser-action@v1.7.0
         with:
           charts_dir: deploy
-          token: ${{ secrets.HELM_REPO_PAT }}
         env:
           # Configuration for pushing to the external repository now goes here,
           # using the environment variables expected by the 'cr' tool.
